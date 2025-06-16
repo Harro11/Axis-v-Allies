@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Axis & Allies 1942 Online</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .modal { display: none; }
+    .modal:not(.hidden) { display: flex; }
+    canvas { touch-action: none; }
+    .tooltip { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 5px; border-radius: 3px; pointer-events: none; font-size: 12px; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white">
+  <div class="container mx-auto p-4">
+    <h1 class="text-3xl font-bold text-center mb-4">Axis & Allies 1942 Online</h1>
+    <div id="game-info" class="mb-4">
+      <p id="current-player" class="text-lg">Current Player: USSR</p>
+      <p id="phase" class="text-lg">Phase: Research</p>
+      <p id="ipc" class="text-lg">IPCs: 0</p>
+    </div>
+    <div id="canvas-container" class="flex justify-center relative"></div>
+    <div class="flex justify-center space-x-4 mt-4">
+      <button id="next-phase" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-lg hidden">Next Phase</button>
+      <button id="end-turn" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-lg">End Turn</button>
+    </div>
+    <div id="controls" class="mt-4">
+      <label for="dice-mode" class="mr-2">Dice Mode:</label>
+      <select id="dice-mode" class="bg-gray-800 text-white p-2 rounded text-lg">
+        <option value="standard">Standard</option>
+        <option value="low-luck">Low Luck</option>
+        <option value="biased">Biased</option>
+      </select>
+      <label for="defense-profile" class="ml-4 mr-2">Defense Profile:</label>
+      <select id="defense-profile" class="bg-gray-800 text-white p-2 rounded text-lg">
+        <option value="cheapest-first">Cheapest First</option>
+        <option value="expensive-first">Expensive First</option>
+      </select>
+    </div>
+    <div id="stats" class="mt-4">
+      <h2 class="text-xl font-bold">Player Stats</h2>
+      <p id="wins">Wins: 0</p>
+      <p id="losses">Losses: 0</p>
+    </div>
+    <!-- Phase Modals -->
+    <div id="research-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Research Phase</h2>
+        <p>Research technology (not implemented) or skip.</p>
+        <div class="flex justify-between mt-4">
+          <button id="research-skip" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">Skip</button>
+          <button id="research-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="purchase-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Purchase Phase</h2>
+        <p>IPCs Available: <span id="purchase-ipc"></span></p>
+        <select id="purchase-unit" class="bg-gray-900 p-2 rounded mt-2 w-full text-lg">
+          <option value="infantry">Infantry (3 IPCs)</option>
+          <option value="artillery">Artillery (4 IPCs)</option>
+          <option value="tank">Tank (6 IPCs)</option>
+          <option value="fighter">Fighter (10 IPCs)</option>
+          <option value="bomber">Bomber (12 IPCs)</option>
+          <option value="aaa">AAA (5 IPCs)</option>
+          <option value="battleship">Battleship (20 IPCs)</option>
+          <option value="carrier">Carrier (16 IPCs)</option>
+          <option value="cruiser">Cruiser (12 IPCs)</option>
+          <option value="destroyer">Destroyer (8 IPCs)</option>
+          <option value="submarine">Submarine (6 IPCs)</option>
+          <option value="transport">Transport (7 IPCs)</option>
+        </select>
+        <button id="purchase-add" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mt-2 w-full text-lg">Add Unit</button>
+        <p class="mt-2">Purchased: <span id="purchased-units"></span></p>
+        <button id="purchase-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4 w-full text-lg">Confirm Purchase</button>
+      </div>
+    </div>
+    <div id="combat-move-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Combat Move Phase</h2>
+        <p>Select a territory and an adjacent enemy territory to attack.</p>
+        <p>Selected: <span id="combat-move-selected"></span></p>
+        <p>Target: <select id="combat-move-target" class="bg-gray-900 p-2 rounded mt-2 w-full text-lg"></select></p>
+        <div class="flex justify-between mt-4">
+          <button id="combat-move-skip" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded text-lg">Skip</button>
+          <button id="combat-move-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-lg">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="combat-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Combat Phase</h2>
+        <p>Resolve combat for selected territories.</p>
+        <p>Results: <span id="combat-results"></span></p>
+        <button id="combat-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4 w-full text-lg">Confirm</button>
+      </div>
+    </div>
+    <div id="non-combat-move-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Non-Combat Move Phase</h2>
+        <p>Move units to friendly territories (select a territory).</p>
+        <p>Selected: <span id="non-combat-move-selected"></span></p>
+        <p>Target: <select id="non-combat-move-target" class="bg-gray-900 p-2 rounded mt-2 w-full text-lg"></select></p>
+        <div class="flex justify-between mt-4">
+          <button id="non-combat-move-skip" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded text-lg">Skip</button>
+          <button id="non-combat-move-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-lg">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="place-units-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div class="bg-gray-800 p-6 rounded-lg w-96">
+        <h2 class="text-xl font-bold mb-2">Place Units Phase</h2>
+        <p>Place purchased units in a territory with a factory.</p>
+        <p>Purchased: <span id="place-units-list"></span></p>
+        <p>Territory: <select id="place-territory" class="bg-gray-900 p-2 rounded mt-2 w-full text-lg"></select></p>
+        <button id="place-units-confirm" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4 w-full text-lg">Confirm Placement</button>
+      </div>
+    </div>
+    <div id="tooltip" class="tooltip hidden"></div>
+  </div>
+
+  <script>
+    let territories = {
+      // Land Territories
+      'Germany': { owner: 'Germany', units: { infantry: 6, artillery: 2, tank: 3, fighter: 2, aaa: 1 }, ipc: 10, isSea: false, hasFactory: true },
+      'Southern Europe': { owner: 'Germany', units: { infantry: 2, tank: 1 }, ipc: 6, isSea: false, hasFactory: true },
+      'Western Europe': { owner: 'Germany', units: { infantry: 4, artillery: 1, tank: 2, fighter: 1, aaa: 1 }, ipc: 6, isSea: false },
+      'Eastern Europe': { owner: 'Germany', units: { infantry: 3, tank: 1, fighter: 1 }, ipc: 4, isSea: false },
+      'Norway': { owner: 'Germany', units: { infantry: 2 }, ipc: 3, isSea: false },
+      'Finland': { owner: 'Germany', units: { infantry: 1 }, ipc: 2, isSea: false },
+      'Poland': { owner: 'Germany', units: { infantry: 2 }, ipc: 3, isSea: false },
+      'North Africa': { owner: 'Germany', units: { infantry: 2, tank: 1 }, ipc: 2, isSea: false },
+      'Japan': { owner: 'Japan', units: { infantry: 6, artillery: 1, tank: 1, fighter: 2, bomber: 1, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+      'Manchuria': { owner: 'Japan', units: { infantry: 3, fighter: 1 }, ipc: 3, isSea: false },
+      'French Indo-China': { owner: 'Japan', units: { infantry: 2 }, ipc: 2, isSea: false },
+      'Kwangtung': { owner: 'Japan', units: { infantry: 2 }, ipc: 3, isSea: false },
+      'Russia': { owner: 'USSR', units: { infantry: 6, artillery: 2, tank: 2, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+      'Caucasus': { owner: 'USSR', units: { infantry: 2, tank: 1 }, ipc: 4, isSea: false },
+      'Archangel': { owner: 'USSR', units: { infantry: 1 }, ipc: 2, isSea: false },
+      'Siberia': { owner: 'USSR', units: { infantry: 2 }, ipc: 2, isSea: false },
+      'United Kingdom': { owner: 'UK', units: { infantry: 4, artillery: 1, fighter: 2, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+      'Egypt': { owner: 'UK', units: { infantry: 2, tank: 1 }, ipc: 2, isSea: false },
+      'India': { owner: 'UK', units: { infantry: 3, artillery: 1, fighter: 1 }, ipc: 3, isSea: false, hasFactory: true },
+      'Australia': { owner: 'UK', units: { infantry: 2, fighter: 1 }, ipc: 2, isSea: false },
+      'Union of South Africa': { owner: 'UK', units: { infantry: 1 }, ipc: 1, isSea: false },
+      'USA': { owner: 'USA', units: { infantry: 4, artillery: 1, tank: 1, fighter: 2, bomber: 1, aaa: 1 }, ipc: 10, isSea: false, hasFactory: true },
+      'Eastern United States': { owner: 'USA', units: { infantry: 2, fighter: 1 }, ipc: 7, isSea: false, hasFactory: true },
+      'Western United States': { owner: 'USA', units: { infantry: 2, tank: 1 }, ipc: 7, isSea: false, hasFactory: true },
+      'Alaska': { owner: 'USA', units: { infantry: 1 }, ipc: 1, isSea: false },
+      'Brazil': { owner: 'USA', units: { infantry: 1 }, ipc: 1, isSea: false },
+      // Add more land territories as needed
+      // Sea Zones
+      'Sea Zone 1': { owner: 'USA', units: { battleship: 1, carrier: 1, fighter: 2, destroyer: 1, transport: 1 }, ipc: 0, isSea: true },
+      'Sea Zone 2': { owner: null, units: {}, ipc: 0, isSea: true },
+      'Sea Zone 6': { owner: 'Japan', units: { battleship: 1, carrier: 1, fighter: 2, submarine: 1 }, ipc: 0, isSea: true },
+      'Sea Zone 10': { owner: 'UK', units: { cruiser: 1, transport: 1 }, ipc: 0, isSea: true },
+      'Sea Zone 15': { owner: null, units: {}, ipc: 0, isSea: true },
+      // Add more sea zones (66 total regions)
+    };
+
+    let connections = {
+      'Germany': ['Western Europe', 'Eastern Europe', 'Southern Europe', 'Poland', 'Sea Zone 2'],
+      'Western Europe': ['Germany', 'Sea Zone 2', 'Sea Zone 10'],
+      'Eastern Europe': ['Germany', 'Poland', 'Russia', 'Caucasus'],
+      'Southern Europe': ['Germany', 'North Africa', 'Sea Zone 10'],
+      'Poland': ['Germany', 'Eastern Europe'],
+      'Norway': ['Sea Zone 2', 'Finland'],
+      'Finland': ['Norway', 'Russia'],
+      'North Africa': ['Southern Europe', 'Egypt', 'Sea Zone 10'],
+      'Japan': ['Manchuria', 'Kwangtung', 'Sea Zone 6'],
+      'Manchuria': ['Japan', 'Russia', 'Siberia'],
+      'French Indo-China': ['Kwangtung', 'India', 'Sea Zone 15'],
+      'Kwangtung': ['Japan', 'French Indo-China', 'Sea Zone 6'],
+      'Russia': ['Eastern Europe', 'Caucasus', 'Siberia', 'Manchuria', 'Archangel', 'Finland'],
+      'Caucasus': ['Russia', 'Eastern Europe'],
+      'Archangel': ['Russia', 'Sea Zone 2'],
+      'Siberia': ['Russia', 'Manchuria'],
+      'United Kingdom': ['Sea Zone 2', 'Sea Zone 10'],
+      'Egypt': ['North Africa', 'India', 'Sea Zone 10'],
+      'India': ['French Indo-China', 'Egypt', 'Australia', 'Sea Zone 15'],
+      'Australia': ['India', 'Sea Zone 15'],
+      'Union of South Africa': ['Sea Zone 15'],
+      'USA': ['Sea Zone 1'],
+      'Eastern United States': ['Sea Zone 1'],
+      'Western United States': ['Sea Zone 1'],
+      'Alaska': ['Sea Zone 1'],
+      'Brazil': ['Sea Zone 10'],
+      'Sea Zone 1': ['USA', 'Eastern United States', 'Western United States', 'Alaska', 'Sea Zone 2'],
+      'Sea Zone 2': ['Germany', 'Western Europe', 'United Kingdom', 'Norway', 'Archangel', 'Sea Zone 1'],
+      'Sea Zone 6': ['Japan', 'Kwangtung', 'Sea Zone 15'],
+      'Sea Zone 10': ['Western Europe', 'Southern Europe', 'United Kingdom', 'North Africa', 'Egypt', 'Brazil'],
+      'Sea Zone 15': ['French Indo-China', 'India', 'Australia', 'Union of South Africa', 'Sea Zone 6'],
+      // Add more connections
+    };
+
+    let territoryData = {
+      'Germany': { x: 200, y: 50, w: 60, h: 40, color: [200, 50, 50] },
+      'Southern Europe': { x: 200, y: 110, w: 60, h: 40, color: [200, 50, 50] },
+      'Western Europe': { x: 140, y: 80, w: 60, h: 40, color: [200, 50, 50] },
+      'Eastern Europe': { x: 260, y: 80, w: 60, h: 40, color: [200, 50, 50] },
+      'Norway': { x: 200, y: 20, w: 60, h: 40, color: [200, 50, 50] },
+      'Finland': { x: 260, y: 20, w: 60, h: 40, color: [200, 50, 50] },
+      'Poland': { x: 260, y: 50, w: 60, h: 40, color: [200, 50, 50] },
+      'North Africa': { x: 200, y: 170, w: 60, h: 40, color: [200, 50, 50] },
+      'Japan': { x: 650, y: 80, w: 60, h: 40, color: [255, 165, 0] },
+      'Manchuria': { x: 590, y: 80, w: 60, h: 40, color: [255, 165, 0] },
+      'French Indo-China': { x: 590, y: 140, w: 60, h: 40, color: [255, 165, 0] },
+      'Kwangtung': { x: 650, y: 140, w: 60, h: 40, color: [255, 165, 0] },
+      'Russia': { x: 350, y: 50, w: 60, h: 40, color: [50, 200, 50] },
+      'Caucasus': { x: 350, y: 110, w: 60, h: 40, color: [50, 200, 50] },
+      'Archangel': { x: 350, y: 20, w: 60, h: 40, color: [50, 200, 50] },
+      'Siberia': { x: 410, y: 50, w: 60, h: 40, color: [50, 200, 50] },
+      'United Kingdom': { x: 140, y: 50, w: 60, h: 40, color: [128, 0, 128] },
+      'Egypt': { x: 260, y: 170, w: 60, h: 40, color: [128, 0, 128] },
+      'India': { x: 410, y: 140, w: 60, h: 40, color: [128, 0, 128] },
+      'Australia': { x: 650, y: 200, w: 60, h: 40, color: [128, 0, 128] },
+      'Union of South Africa': { x: 260, y: 230, w: 60, h: 40, color: [128, 0, 128] },
+      'USA': { x: 50, y: 200, w: 60, h: 40, color: [50, 50, 200] },
+      'Eastern United States': { x: 110, y: 200, w: 60, h: 40, color: [50, 50, 200] },
+      'Western United States': { x: 50, y: 260, w: 60, h: 40, color: [50, 50, 200] },
+      'Alaska': { x: 50, y: 140, w: 60, h: 40, color: [50, 50, 200] },
+      'Brazil': { x: 110, y: 260, w: 60, h: 40, color: [50, 50, 200] },
+      'Sea Zone 1': { x: 50, y: 320, w: 60, h: 40, color: [0, 0, 100] },
+      'Sea Zone 2': { x: 140, y: 320, w: 60, h: 40, color: [0, 0, 100] },
+      'Sea Zone 6': { x: 650, y: 320, w: 60, h: 40, color: [0, 0, 100] },
+      'Sea Zone 10': { x: 200, y: 320, w: 60, h: 40, color: [0, 0, 100] },
+      'Sea Zone 15': { x: 410, y: 320, w: 60, h: 40, color: [0, 0, 100] },
+      // Add more territories
+    };
+
+    let unitStats = {
+      infantry: { cost: 3, attack: 1, defense: 2, move: 1, isLand: true },
+      artillery: { cost: 4, attack: 2, defense: 2, move: 1, boostsInfantry: true, isLand: true },
+      tank: { cost: 6, attack: 3, defense: 3, move: 2, canBlitz: true, isLand: true },
+      fighter: { cost: 10, attack: 3, defense: 4, move: 4, isAir: true, needsLanding: true },
+      bomber: { cost: 12, attack: 4, defense: 1, move: 6, isAir: true, needsLanding: true },
+      aaa: { cost: 5, attack: 0, defense: 1, move: 1, antiAir: true, isLand: true },
+      battleship: { cost: 20, attack: 4, defense: 4, move: 2, takesTwoHits: true, isSea: true },
+      carrier: { cost: 16, attack: 1, defense: 2, move: 2, carries: 2, isSea: true },
+      cruiser: { cost: 12, attack: 3, defense: 3, move: 2, isSea: true },
+      destroyer: { cost: 8, attack: 2, defense: 2, move: 2, antiSub: true, isSea: true },
+      submarine: { cost: 6, attack: 2, defense: 1, move: 2, firstStrike: true, canSubmerge: true, isSea: true },
+      transport: { cost: 7, attack: 0, defense: 0, move: 2, carries: 2, isSea: true, isTransport: true },
+    };
+
+    let players = ['USSR', 'Germany', 'UK', 'Japan', 'USA'];
+    let currentPlayerIndex = 0;
+    let phases = ['Research', 'Purchase', 'Combat Move', 'Combat', 'Non-Combat Move', 'Place Units'];
+    let currentPhaseIndex = 0;
+    let playerStats = { USSR: { wins: 0, losses: 0 }, Germany: { wins: 0, losses: 0 }, UK: { wins: 0, losses: 0 }, Japan: { wins: 0, losses: 0 }, USA: { wins: 0, losses: 0 } };
+    let ipc = { USSR: 24, Germany: 30, UK: 28, Japan: 26, USA: 36 };
+    let selectedTerritory = null;
+    let combatTarget = null;
+    let nonCombatTarget = null;
+    let diceMode = 'standard';
+    let defenseProfile = 'cheapest-first';
+    let purchasedUnits = [];
+    let phaseCompleted = false;
+    let zoom = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let tooltipTerritory = null;
+
+    function preload() {
+      // Load assets (simulated)
+    }
+
+    function setup() {
+      let canvas = createCanvas(800, 400);
+      canvas.parent('canvas-container');
+      canvas.mouseWheel(zoomCanvas);
+      loadGameState();
+      updateUI();
+      showPhaseModal();
+    }
+
+    function zoomCanvas(event) {
+      let delta = event.deltaY > 0 ? 0.9 : 1.1;
+      let oldZoom = zoom;
+      zoom = constrain(zoom * delta, 0.5, 2);
+      let mouseXWorld = (mouseX - panX) / oldZoom;
+      let mouseYWorld = (mouseY - panY) / oldZoom;
+      panX = mouseX - mouseXWorld * zoom;
+      panY = mouseY - mouseYWorld * zoom;
+      redraw();
+    }
+
+    function mousePressed() {
+      if (mouseButton === LEFT && currentPhase() !== 'Combat') {
+        isDragging = true;
+        dragStartX = mouseX - panX;
+        dragStartY = mouseY - panY;
+      }
+      selectTerritory();
+      redraw();
+    }
+
+    function mouseDragged() {
+      if (isDragging) {
+        panX = mouseX - dragStartX;
+        panY = mouseY - dragStartY;
+        redraw();
+      }
+    }
+
+    function mouseReleased() {
+      isDragging = false;
+    }
+
+    function mouseMoved() {
+      let prevTooltip = tooltipTerritory;
+      tooltipTerritory = null;
+      for (let territory in territoryData) {
+        let t = territoryData[territory];
+        let x = t.x * zoom + panX;
+        let y = t.y * zoom + panY;
+        let w = t.w * zoom;
+        let h = t.h * zoom;
+        if (mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h) {
+          tooltipTerritory = territory;
+          break;
+        }
+      }
+      if (tooltipTerritory !== prevTooltip) {
+        updateTooltip();
+      }
+    }
+
+    function updateTooltip() {
+      let tooltip = document.getElementById('tooltip');
+      if (tooltipTerritory) {
+        let t = territories[tooltipTerritory];
+        tooltip.innerHTML = `${tooltipTerritory}<br>Owner: ${t.owner}<br>IPC: ${t.ipc}<br>${formatUnits(t.units)}`;
+        tooltip.style.left = `${mouseX + 10}px`;
+        tooltip.style.top = `${mouseY + 10}px`;
+        tooltip.classList.remove('hidden');
+      } else {
+        tooltip.classList.add('hidden');
+      }
+    }
+
+    function selectTerritory() {
+      selectedTerritory = null;
+      for (let territory in territoryData) {
+        let t = territoryData[territory];
+        let x = t.x * zoom + panX;
+        let y = t.y * zoom + panY;
+        let w = t.w * zoom;
+        let h = t.h * zoom;
+        if (mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h) {
+          selectedTerritory = territory;
+          if (currentPhase() === 'Combat Move' && territories[territory].owner === currentPlayer()) {
+            updateCombatMoveModal();
+          } else if (currentPhase() === 'Non-Combat Move' && territories[territory].owner === currentPlayer()) {
+            updateNonCombatMoveModal();
+          } else if (currentPhase() === 'Place Units' && territories[territory].owner === currentPlayer() && territories[territory].hasFactory) {
+            phaseCompleted = true;
+          }
+          break;
+        }
+      }
+    }
+
+    function draw() {
+      background(0, 105, 148);
+      push();
+      translate(panX, panY);
+      scale(zoom);
+      fill(0, 100, 0);
+      rect(0, 0, width / zoom, height * 0.7 / zoom);
+      fill(0, 0, 100);
+      rect(0, height * 0.7 / zoom, width / zoom, height * 0.3 / zoom);
+
+      for (let territory in territoryData) {
+        let t = territoryData[territory];
+        let owner = territories[territory].owner || 'Neutral';
+        fill(t.color[0], t.color[1], t.color[2], owner === currentPlayer() ? 255 : 150);
+        rect(t.x, t.y, t.w, t.h, 5);
+        if (territories[territory].hasFactory) {
+          fill(255, 0, 0);
+          ellipse(t.x + t.w - 10, t.y + 10, 10, 10);
+        }
+        fill(255);
+        textSize(8 / zoom);
+        textAlign(LEFT, TOP);
+        text(`${territory}\nIPC: ${territories[territory].ipc}`, t.x + 5, t.y + 5);
+      }
+
+      if (selectedTerritory && territoryData[selectedTerritory]) {
+        let t = territoryData[selectedTerritory];
+        stroke(255, 255, 0);
+        strokeWeight(3 / zoom);
+        noFill();
+        rect(t.x, t.y, t.w, t.h, 5);
+      }
+      pop();
+    }
+
+    function formatUnits(units) {
+      return Object.entries(units).filter(([_, count]) => count > 0).map(([unit, count]) => `${unit}: ${count}`).join(', ');
+    }
+
+    function currentPlayer() {
+      return players[currentPlayerIndex];
+    }
+
+    function currentPhase() {
+      return phases[currentPhaseIndex];
+    }
+
+    function showPhaseModal() {
+      document.querySelectorAll('.modal').forEach(modal => modal.classList.add('hidden'));
+      let modal = document.getElementById(`${currentPhase().toLowerCase().replace(' ', '-')}-modal`);
+      modal.classList.remove('hidden');
+      phaseCompleted = currentPhase() === 'Research' || currentPhase() === 'Non-Combat Move';
+      if (currentPhase() === 'Purchase') {
+        document.getElementById('purchase-ipc').textContent = ipc[currentPlayer()];
+        document.getElementById('purchased-units').textContent = formatUnits(purchasedUnits.reduce((acc, unit) => {
+          acc[unit] = (acc[unit] || 0) + 1;
+          return acc;
+        }, {}));
+      } else if (currentPhase() === 'Combat Move') {
+        updateCombatMoveModal();
+      } else if (currentPhase() === 'Non-Combat Move') {
+        updateNonCombatMoveModal();
+      } else if (currentPhase() === 'Place Units') {
+        let select = document.getElementById('place-territory');
+        select.innerHTML = Object.keys(territories)
+          .filter(t => territories[t].owner === currentPlayer() && territories[t].hasFactory && !territories[t].isSea)
+          .map(t => `<option value="${t}">${t}</option>`).join('');
+        document.getElementById('place-units-list').textContent = formatUnits(purchasedUnits.reduce((acc, unit) => {
+          acc[unit] = (acc[unit] || 0) + 1;
+          return acc;
+        }, {}));
+      }
+    }
+
+    function updateCombatMoveModal() {
+      document.getElementById('combat-move-selected').textContent = selectedTerritory || 'None';
+      let targetSelect = document.getElementById('combat-move-target');
+      if (selectedTerritory && territories[selectedTerritory].owner === currentPlayer()) {
+        let targets = connections[selectedTerritory]
+          .filter(t => territories[t].owner !== currentPlayer() && territories[t].owner && territories[t].isSea === territories[selectedTerritory].isSea);
+        targetSelect.innerHTML = targets.map(t => `<option value="${t}">${t}</option>`).join('');
+        combatTarget = targets[0] || null;
+      } else {
+        targetSelect.innerHTML = '<option value="">Select a territory first</option>';
+        combatTarget = null;
+      }
+    }
+
+    function updateNonCombatMoveModal() {
+      document.getElementById('non-combat-move-selected').textContent = selectedTerritory || 'None';
+      let targetSelect = document.getElementById('non-combat-move-target');
+      if (selectedTerritory && territories[selectedTerritory].owner === currentPlayer()) {
+        let targets = connections[selectedTerritory]
+          .filter(t => territories[t].owner === currentPlayer() && territories[t].isSea === territories[selectedTerritory].isSea);
+        targetSelect.innerHTML = targets.map(t => `<option value="${t}">${t}</option>`).join('');
+        nonCombatTarget = targets[0] || null;
+      } else {
+        targetSelect.innerHTML = '<option value="">Select a territory first</option>';
+        nonCombatTarget = null;
+      }
+    }
+
+    function nextPhase() {
+      if (!phaseCompleted) {
+        alert(`Please complete the ${currentPhase()} phase.`);
+        return;
+      }
+      currentPhaseIndex = (currentPhaseIndex + 1) % phases.length;
+      if (currentPhaseIndex === 0) {
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        purchasedUnits = [];
+        if (currentPlayer() === 'Germany' || currentPlayer() === 'Japan') {
+          aiTurn();
+        }
+        alert(`Turn passed to ${currentPlayer()}`);
+      }
+      if (currentPhase() === 'Combat') {
+        resolveCombat();
+      }
+      updateUI();
+      showPhaseModal();
+      saveGameState();
+    }
+
+    function endTurn() {
+      if (!phaseCompleted) {
+        alert(`Please complete the ${currentPhase()} phase.`);
+        return;
+      }
+      currentPhaseIndex = 0;
+      currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+      purchasedUnits = [];
+      if (currentPlayer() === 'Germany' || currentPlayer() === 'Japan') {
+        aiTurn();
+      }
+      alert(`Turn passed to ${currentPlayer()}`);
+      updateUI();
+      showPhaseModal();
+      saveGameState();
+    }
+
+    function resolveCombat() {
+      if (!selectedTerritory || !combatTarget) {
+        document.getElementById('combat-results').textContent = 'No combat.';
+        phaseCompleted = true;
+        return;
+      }
+      let attacker = territories[selectedTerritory];
+      let defender = territories[combatTarget];
+      if (!connections[selectedTerritory].includes(combatTarget)) {
+        document.getElementById('combat-results').textContent = 'Invalid target.';
+        phaseCompleted = true;
+        return;
+      }
+
+      // Handle submarine first strike
+      let subHits = 0;
+      if (defender.units.submarine && !attacker.units.destroyer) {
+        subHits = rollForUnits(defender.units.submarine, unitStats.submarine.defense, diceMode);
+        applyCasualties(attacker, subHits, defenseProfile);
+      }
+
+      let attackerHits = rollDice(attacker.units, diceMode, true, attacker.isSea);
+      let defenderHits = rollDice(defender.units, diceMode, false, defender.isSea);
+
+      applyCasualties(attacker, defenderHits - subHits, defenseProfile);
+      applyCasualties(defender, attackerHits, defenseProfile);
+
+      if (Object.values(defender.units).every(count => count === 0)) {
+        defender.owner = attacker.owner;
+        Object.keys(defender.units).forEach(unit => defender.units[unit] = 0);
+        Object.keys(attacker.units).forEach(unit => {
+          defender.units[unit] = (defender.units[unit] || 0) + (attacker.units[unit] || 0);
+          attacker.units[unit] = 0;
+        });
+        alert(`${attacker.owner} captured ${combatTarget}!`);
+        playerStats[attacker.owner].wins++;
+        playerStats[defender.owner].losses++;
+      }
+
+      document.getElementById('combat-results').textContent = `Attacker Hits: ${attackerHits}, Defender Hits: ${defenderHits}`;
+      checkVictoryConditions();
+      selectedTerritory = null;
+      combatTarget = null;
+      phaseCompleted = true;
+      updateUI();
+      saveGameState();
+    }
+
+    function rollDice(units, mode, isAttacking, isSea) {
+      let hits = 0;
+      let infantryBoosted = 0;
+      if (units.artillery && isAttacking && units.infantry) {
+        infantryBoosted = Math.min(units.infantry, units.artillery);
+      }
+      for (let unit in units) {
+        if (unit === 'transport' && isAttacking) continue;
+        if (unit === 'aaa' && (isSea || isAttacking)) continue;
+        let stat = isAttacking ? unitStats[unit].attack : unitStats[unit].defense;
+        if (unit === 'infantry' && infantryBoosted > 0 && isAttacking) {
+          let boosted = Math.min(infantryBoosted, units.infantry);
+          hits += rollForUnits(boosted, 2, mode);
+          infantryBoosted -= boosted;
+          hits += rollForUnits(units.infantry - boosted, stat, mode);
+        } else {
+          hits += rollForUnits(units[unit], stat, mode);
+        }
+      }
+      if (mode === 'low-luck') {
+        hits = Math.round(Object.entries(units).reduce((sum, [unit, count]) => {
+          if (unit === 'transport' && isAttacking) return sum;
+          if (unit === 'aaa' && (isSea || isAttacking)) return sum;
+          let stat = isAttacking ? unitStats[unit].attack : unitStats[unit].defense;
+          if (unit === 'infantry' && isAttacking && units.artillery) {
+            let boosted = Math.min(count, units.artillery || 0);
+            return sum + boosted * (2 / 6) + (count - boosted) * (stat / 6);
+          }
+          return sum + count * (stat / 6);
+        }, 0));
+      }
+      return hits;
+    }
+
+    function rollForUnits(count, stat, mode) {
+      let hits = 0;
+      for (let i = 0; i < count; i++) {
+        let roll = Math.floor(Math.random() * 6) + 1;
+        if (mode === 'biased' && (roll === 1 || roll === 6)) {
+          roll = Math.floor(Math.random() * 3) + 2;
+        }
+        if (roll <= stat) hits++;
+      }
+      return hits;
+    }
+
+    function applyCasualties(territory, hits, profile) {
+      let units = Object.keys(territory.units).sort((a, b) => {
+        return profile === 'cheapest-first' ? unitStats[a].cost - unitStats[b].cost : unitStats[b].cost - unitStats[a].cost;
+      });
+      for (let unit of units) {
+        while (hits > 0 && territory.units[unit] > 0) {
+          territory.units[unit]--;
+          if (unit === 'battleship' && territory.units[unit] > 0) {
+            hits--; // Takes two hits
+          } else {
+            hits--;
+          }
+        }
+      }
+    }
+
+    function checkVictoryConditions() {
+      let axisCapitals = ['Germany', 'Japan'].filter(c => territories[c].owner !== c).length;
+      let alliedCapitals = ['Russia', 'United Kingdom', 'USA'].filter(c => territories[c].owner !== c).length;
+      let axisIPC = Object.values(territories).reduce((sum, t) => (t.owner === 'Germany' || t.owner === 'Japan') && !t.isSea ? sum + t.ipc : sum, 0);
+
+      if (alliedCapitals >= 2) {
+        alert('Axis Victory!');
+        resetGame();
+      } else if (axisCapitals >= 2) {
+        alert('Allies Victory!');
+        resetGame();
+      } else if (axisIPC >= 84) {
+        alert('Axis IPC Victory!');
+        resetGame();
+      }
+    }
+
+    function aiTurn() {
+      let aiTerritories = Object.keys(territories).filter(t => territories[t].owner === currentPlayer() && !territories[t].isSea);
+      let highValueTargets = Object.keys(territories)
+        .filter(t => territories[t].owner !== currentPlayer() && !territories[t].isSea && territories[t].ipc > 3)
+        .sort((a, b) => territories[b].ipc - territories[a].ipc);
+      selectedTerritory = aiTerritories[Math.floor(Math.random() * aiTerritories.length)];
+      combatTarget = connections[selectedTerritory].find(t => highValueTargets.includes(t)) || connections[selectedTerritory].find(t => territories[t].owner !== currentPlayer() && !territories[t].isSea);
+      phaseCompleted = true;
+      nextPhase();
+    }
+
+    function resetGame() {
+      territories = {
+        'Germany': { owner: 'Germany', units: { infantry: 6, artillery: 2, tank: 3, fighter: 2, aaa: 1 }, ipc: 10, isSea: false, hasFactory: true },
+        'Southern Europe': { owner: 'Germany', units: { infantry: 2, tank: 1 }, ipc: 6, isSea: false, hasFactory: true },
+        'Western Europe': { owner: 'Germany', units: { infantry: 4, artillery: 1, tank: 2, fighter: 1, aaa: 1 }, ipc: 6, isSea: false },
+        'Eastern Europe': { owner: 'Germany', units: { infantry: 3, tank: 1, fighter: 1 }, ipc: 4, isSea: false },
+        'Norway': { owner: 'Germany', units: { infantry: 2 }, ipc: 3, isSea: false },
+        'Finland': { owner: 'Germany', units: { infantry: 1 }, ipc: 2, isSea: false },
+        'Poland': { owner: 'Germany', units: { infantry: 2 }, ipc: 3, isSea: false },
+        'North Africa': { owner: 'Germany', units: { infantry: 2, tank: 1 }, ipc: 2, isSea: false },
+        'Japan': { owner: 'Japan', units: { infantry: 6, artillery: 1, tank: 1, fighter: 2, bomber: 1, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+        'Manchuria': { owner: 'Japan', units: { infantry: 3, fighter: 1 }, ipc: 3, isSea: false },
+        'French Indo-China': { owner: 'Japan', units: { infantry: 2 }, ipc: 2, isSea: false },
+        'Kwangtung': { owner: 'Japan', units: { infantry: 2 }, ipc: 3, isSea: false },
+        'Russia': { owner: 'USSR', units: { infantry: 6, artillery: 2, tank: 2, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+        'Caucasus': { owner: 'USSR', units: { infantry: 2, tank: 1 }, ipc: 4, isSea: false },
+        'Archangel': { owner: 'USSR', units: { infantry: 1 }, ipc: 2, isSea: false },
+        'Siberia': { owner: 'USSR', units: { infantry: 2 }, ipc: 2, isSea: false },
+        'United Kingdom': { owner: 'UK', units: { infantry: 4, artillery: 1, fighter: 2, aaa: 1 }, ipc: 8, isSea: false, hasFactory: true },
+        'Egypt': { owner: 'UK', units: { infantry: 2, tank: 1 }, ipc: 2, isSea: false },
+        'India': { owner: 'UK', units: { infantry: 3, artillery: 1, fighter: 1 }, ipc: 3, isSea: false, hasFactory: true },
+        'Australia': { owner: 'UK', units: { infantry: 2, fighter: 1 }, ipc: 2, isSea: false },
+        'Union of South Africa': { owner: 'UK', units: { infantry: 1 }, ipc: 1, isSea: false },
+        'USA': { owner: 'USA', units: { infantry: 4, artillery: 1, tank: 1, fighter: 2, bomber: 1, aaa: 1 }, ipc: 10, isSea: false, hasFactory: true },
+        'Eastern United States': { owner: 'USA', units: { infantry: 2, fighter: 1 }, ipc: 7, isSea: false, hasFactory: true },
+        'Western United States': { owner: 'USA', units: { infantry: 2, tank: 1 }, ipc: 7, isSea: false, hasFactory: true },
+        'Alaska': { owner: 'USA', units: { infantry: 1 }, ipc: 1, isSea: false },
+        'Brazil': { owner: 'USA', units: { infantry: 1 }, ipc: 1, isSea: false },
+        'Sea Zone 1': { owner: 'USA', units: { battleship: 1, carrier: 1, fighter: 2, destroyer: 1, transport: 1 }, ipc: 0, isSea: true },
+        'Sea Zone 2': { owner: null, units: {}, ipc: 0, isSea: true },
+        'Sea Zone 6': { owner: 'Japan', units: { battleship: 1, carrier: 1, fighter: 2, submarine: 1 }, ipc: 0, isSea: true },
+        'Sea Zone 10': { owner: 'UK', units: { cruiser: 1, transport: 1 }, ipc: 0, isSea: true },
+        'Sea Zone 15': { owner: null, units: {}, ipc: 0, isSea: true },
+      };
+      currentPlayerIndex = 0;
+      currentPhaseIndex = 0;
+      purchasedUnits = [];
+      selectedTerritory = null;
+      combatTarget = null;
+      zoom = 1;
+      panX = 0;
+      panY = 0;
+      updateUI();
+      showPhaseModal();
+      saveGameState();
+    }
+
+    function saveGameState() {
+      localStorage.setItem('gameState', JSON.stringify({
+        territories, currentPlayerIndex, currentPhaseIndex, playerStats, ipc, purchasedUnits
+      }));
+    }
+
+    function loadGameState() {
+      let saved = localStorage.getItem('gameState');
+      if (saved) {
+        let state = JSON.parse(saved);
+        territories = state.territories;
+        currentPlayerIndex = state.currentPlayerIndex;
+        currentPhaseIndex = state.currentPhaseIndex;
+        playerStats = state.playerStats;
+        ipc = state.ipc;
+        purchasedUnits = state.purchasedUnits || [];
+      }
+    }
+
+    function updateUI() {
+      document.getElementById('current-player').textContent = `Current Player: ${currentPlayer()}`;
+      document.getElementById('phase').textContent = `Phase: ${currentPhase()}`;
+      document.getElementById('ipc').textContent = `IPCs: ${ipc[currentPlayer()]}`;
+      document.getElementById('wins').textContent = `Wins: ${playerStats[currentPlayer()].wins}`;
+      document.getElementById('losses').textContent = `Losses: ${playerStats[currentPlayer()].losses}`;
+    }
+
+    document.getElementById('next-phase').addEventListener('click', nextPhase);
+    document.getElementById('end-turn').addEventListener('click', endTurn);
+    document.getElementById('dice-mode').addEventListener('change', (e) => {
+      diceMode = e.target.value;
+      saveGameState();
+    });
+    document.getElementById('defense-profile').addEventListener('change', (e) => {
+      defenseProfile = e.target.value;
+      saveGameState();
+    });
+
+    document.getElementById('research-confirm').addEventListener('click', () => {
+      phaseCompleted = true;
+      nextPhase();
+    });
+    document.getElementById('research-skip').addEventListener('click', () => {
+      phaseCompleted = true;
+      nextPhase();
+    });
+
+    document.getElementById('purchase-add').addEventListener('click', () => {
+      let unit = document.getElementById('purchase-unit').value;
+      let cost = unitStats[unit].cost;
+      if (ipc[currentPlayer()] >= cost) {
+        purchasedUnits.push(unit);
+        ipc[currentPlayer()] -= cost;
+        document.getElementById('purchase-ipc').textContent = ipc[currentPlayer()];
+        document.getElementById('purchased-units').textContent = formatUnits(purchasedUnits.reduce((acc, unit) => {
+          acc[unit] = (acc[unit] || 0) + 1;
+          return acc;
+        }, {}));
+        phaseCompleted = true;
+        saveGameState();
+      } else {
+        alert('Not enough IPCs!');
+      }
+    });
+
+    document.getElementById('purchase-confirm').addEventListener('click', () => {
+      if (purchasedUnits.length > 0 || ipc[currentPlayer()] === 0) {
+        phaseCompleted = true;
+        nextPhase();
+      } else {
+        alert('Please purchase at least one unit or spend all IPCs.');
+      }
+    });
+
+    document.getElementById('combat-move-target').addEventListener('change', (e) => {
+      combatTarget = e.target.value;
+      phaseCompleted = !!combatTarget;
+    });
+
+    document.getElementById('combat-move-confirm').addEventListener('click', () => {
+      if (selectedTerritory && combatTarget) {
+        phaseCompleted = true;
+        nextPhase();
+      } else {
+        alert('Please select a territory and target for combat.');
+      }
+    });
+
+    document.getElementById('combat-move-skip').addEventListener('click', () => {
+      selectedTerritory = null;
+      combatTarget = null;
+      phaseCompleted = true;
+      nextPhase();
+    });
+
+    document.getElementById('combat-confirm').addEventListener('click', () => {
+      phaseCompleted = true;
+      nextPhase();
+    });
+
+    document.getElementById('non-combat-move-target').addEventListener('change', (e) => {
+      nonCombatTarget = e.target.value;
+      phaseCompleted = !!nonCombatTarget;
+    });
+
+    document.getElementById('non-combat-move-confirm').addEventListener('click', () => {
+      if (selectedTerritory && nonCombatTarget) {
+        let units = territories[selectedTerritory].units;
+        Object.keys(units).forEach(unit => {
+          territories[nonCombatTarget].units[unit] = (territories[nonCombatTarget].units[unit] || 0) + units[unit];
+          units[unit] = 0;
+        });
+        phaseCompleted = true;
+        nextPhase();
+      } else {
+        alert('Please select a territory and target for non-combat move.');
+      }
+    });
+
+    document.getElementById('non-combat-move-skip').addEventListener('click', () => {
+      selectedTerritory = null;
+      nonCombatTarget = null;
+      phaseCompleted = true;
+      nextPhase();
+    });
+
+    document.getElementById('place-units-confirm').addEventListener('click', () => {
+      let territory = document.getElementById('place-territory').value;
+      if (purchasedUnits.length > 0 && territory) {
+        purchasedUnits.forEach(unit => {
+          if (unitStats[unit].isSea && !territories[territory].isSea) {
+            alert(`${unit} must be placed in a sea zone.`);
+            return;
+          }
+          if (unitStats[unit].isLand && territories[territory].isSea) {
+            alert(`${unit} must be placed on land.`);
+            return;
+          }
+          territories[territory].units[unit] = (territories[territory].units[unit] || 0) + 1;
+        });
+        purchasedUnits = [];
+        phaseCompleted = true;
+        nextPhase();
+      } else {
+        alert('Please select a territory to place units.');
+      }
+    });
+  </script>
+</body>
+</html>
