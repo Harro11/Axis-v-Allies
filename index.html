@@ -10,7 +10,9 @@
     .modal { display: none; }
     .modal:not(.hidden) { display: flex; }
     canvas { touch-action: none; }
-    .tooltip { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 5px; border-radius: 3px; pointer-events: none; font-size: 12px; }
+    .tooltip { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 6px 8px; border-radius: 4px; pointer-events: none; font-size: 12px; line-height: 1.4; }
+    .legend-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; background: rgba(17, 24, 39, 0.8); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
   </style>
 </head>
 <body class="bg-gray-900 text-white">
@@ -22,9 +24,10 @@
       <p id="ipc" class="text-lg">IPCs: 0</p>
     </div>
     <div id="canvas-container" class="flex justify-center relative"></div>
-    <div class="flex justify-center space-x-4 mt-4">
+    <div class="flex flex-wrap justify-center gap-4 mt-4">
       <button id="next-phase" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-lg hidden">Next Phase</button>
       <button id="end-turn" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-lg">End Turn</button>
+      <button id="reset-game" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded text-lg">Reset Game</button>
     </div>
     <div id="controls" class="mt-4">
       <label for="dice-mode" class="mr-2">Dice Mode:</label>
@@ -43,7 +46,9 @@
       <h2 class="text-xl font-bold">Player Stats</h2>
       <p id="wins">Wins: 0</p>
       <p id="losses">Losses: 0</p>
+      <p class="text-sm text-gray-300 mt-2">Tip: Click a territory to highlight connections. Hover to inspect stacks.</p>
     </div>
+    <div id="legend" class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
     <!-- Phase Modals -->
     <div id="research-modal" class="modal hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
       <div class="bg-gray-800 p-6 rounded-lg w-96">
@@ -246,6 +251,21 @@
       transport: { cost: 7, attack: 0, defense: 0, move: 2, carries: 2, isSea: true, isTransport: true },
     };
 
+    const unitMeta = {
+      infantry: { label: 'INF', color: [234, 179, 8] },
+      artillery: { label: 'ART', color: [249, 115, 22] },
+      tank: { label: 'TNK', color: [16, 185, 129] },
+      fighter: { label: 'FIG', color: [59, 130, 246] },
+      bomber: { label: 'BMR', color: [99, 102, 241] },
+      aaa: { label: 'AAA', color: [244, 63, 94] },
+      battleship: { label: 'BB', color: [14, 116, 144] },
+      carrier: { label: 'CV', color: [6, 182, 212] },
+      cruiser: { label: 'CA', color: [34, 211, 238] },
+      destroyer: { label: 'DD', color: [103, 232, 249] },
+      submarine: { label: 'SUB', color: [15, 118, 110] },
+      transport: { label: 'TRN', color: [45, 212, 191] },
+    };
+
     let players = ['USSR', 'Germany', 'UK', 'Japan', 'USA'];
     let currentPlayerIndex = 0;
     let phases = ['Research', 'Purchase', 'Combat Move', 'Combat', 'Non-Combat Move', 'Place Units'];
@@ -272,11 +292,12 @@
     }
 
     function setup() {
-      let canvas = createCanvas(800, 400);
+      let canvas = createCanvas(1100, 600);
       canvas.parent('canvas-container');
       canvas.mouseWheel(zoomCanvas);
       loadGameState();
       updateUI();
+      renderLegend();
       showPhaseModal();
     }
 
@@ -368,14 +389,26 @@
     }
 
     function draw() {
-      background(0, 105, 148);
+      background(8, 47, 73);
       push();
       translate(panX, panY);
       scale(zoom);
-      fill(0, 100, 0);
-      rect(0, 0, width / zoom, height * 0.7 / zoom);
-      fill(0, 0, 100);
-      rect(0, height * 0.7 / zoom, width / zoom, height * 0.3 / zoom);
+      fill(15, 118, 110);
+      rect(0, 0, width / zoom, height * 0.7 / zoom, 12);
+      fill(2, 132, 199);
+      rect(0, height * 0.7 / zoom, width / zoom, height * 0.3 / zoom, 12);
+
+      if (selectedTerritory && connections[selectedTerritory]) {
+        stroke(251, 191, 36, 200);
+        strokeWeight(2 / zoom);
+        connections[selectedTerritory].forEach(target => {
+          if (!territoryData[target]) return;
+          let source = territoryData[selectedTerritory];
+          let dest = territoryData[target];
+          line(source.x + source.w / 2, source.y + source.h / 2, dest.x + dest.w / 2, dest.y + dest.h / 2);
+        });
+        noStroke();
+      }
 
       for (let territory in territoryData) {
         let t = territoryData[territory];
@@ -390,6 +423,7 @@
         textSize(8 / zoom);
         textAlign(LEFT, TOP);
         text(`${territory}\nIPC: ${territories[territory].ipc}`, t.x + 5, t.y + 5);
+        drawUnitStack(territory, t);
       }
 
       if (selectedTerritory && territoryData[selectedTerritory]) {
@@ -400,6 +434,43 @@
         rect(t.x, t.y, t.w, t.h, 5);
       }
       pop();
+    }
+
+    function drawUnitStack(territory, t) {
+      let units = territories[territory].units || {};
+      let stack = Object.entries(units).filter(([_, count]) => count > 0);
+      if (stack.length === 0) return;
+      let startX = t.x + 5;
+      let startY = t.y + t.h - 12;
+      let offsetX = 0;
+      let maxWidth = t.w - 10;
+      stack.forEach(([unit, count]) => {
+        let meta = unitMeta[unit];
+        if (!meta) return;
+        let diameter = 14;
+        if (offsetX + diameter > maxWidth) {
+          offsetX = 0;
+          startY -= 16;
+        }
+        fill(meta.color[0], meta.color[1], meta.color[2]);
+        ellipse(startX + offsetX + 7, startY + 7, diameter, diameter);
+        fill(17, 24, 39);
+        textSize(7 / zoom);
+        textAlign(CENTER, CENTER);
+        text(meta.label, startX + offsetX + 7, startY + 7);
+        fill(255);
+        textSize(8 / zoom);
+        textAlign(LEFT, CENTER);
+        text(`x${count}`, startX + offsetX + 14, startY + 7);
+        offsetX += 34;
+      });
+    }
+
+    function renderLegend() {
+      let legend = document.getElementById('legend');
+      legend.innerHTML = Object.entries(unitMeta).map(([unit, meta]) => {
+        return `<div class="legend-pill"><span class="legend-dot" style="background: rgb(${meta.color.join(',')});"></span><span>${meta.label} - ${unit}</span></div>`;
+      }).join('');
     }
 
     function formatUnits(units) {
@@ -722,6 +793,11 @@
 
     document.getElementById('next-phase').addEventListener('click', nextPhase);
     document.getElementById('end-turn').addEventListener('click', endTurn);
+    document.getElementById('reset-game').addEventListener('click', () => {
+      if (confirm('Reset the game to the original 1942 setup?')) {
+        resetGame();
+      }
+    });
     document.getElementById('dice-mode').addEventListener('change', (e) => {
       diceMode = e.target.value;
       saveGameState();
